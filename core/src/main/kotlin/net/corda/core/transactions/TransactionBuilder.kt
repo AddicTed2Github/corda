@@ -1,10 +1,12 @@
 package net.corda.core.transactions
 
 import co.paralleluniverse.strands.Strand
+import com.esotericsoftware.kryo.KryoException
 import net.corda.core.contracts.*
 import net.corda.core.crypto.*
 import net.corda.core.flows.FlowStateMachine
 import net.corda.core.serialization.serialize
+import net.corda.core.serialization.deserialize
 import java.security.KeyPair
 import java.time.Duration
 import java.time.Instant
@@ -35,7 +37,13 @@ open class TransactionBuilder(
         protected val outputs: MutableList<TransactionState<ContractState>> = arrayListOf(),
         protected val commands: MutableList<Command> = arrayListOf(),
         protected val signers: MutableSet<CompositeKey> = mutableSetOf(),
-        protected var timestamp: Timestamp? = null) {
+        protected var timestamp: Timestamp? = null,
+        protected val options: EnumSet<Option> = EnumSet.noneOf(TransactionBuilder.Option::class.java)) {
+
+    enum class Option {
+        /** Require that each transaction element's serialization is checked as they're added */
+        CHECK_SERIALIZATION
+    }
 
     val time: Timestamp? get() = timestamp
 
@@ -72,6 +80,9 @@ open class TransactionBuilder(
         check(notary != null) { "Only notarised transactions can have a timestamp" }
         signers.add(notary!!.owningKey)
         check(currentSigs.isEmpty()) { "Cannot change timestamp after signing" }
+        if (Option.CHECK_SERIALIZATION in options) {
+            checkSerialization(newTimestamp)
+        }
         this.timestamp = newTimestamp
     }
 
@@ -143,8 +154,12 @@ open class TransactionBuilder(
         return SignedTransaction(wtx.serialize(), ArrayList(currentSigs))
     }
 
+    @Throws(KryoException::class)
     open fun addInputState(stateAndRef: StateAndRef<*>) {
         check(currentSigs.isEmpty())
+        if (Option.CHECK_SERIALIZATION in options) {
+            checkSerialization(stateAndRef.ref)
+        }
         val notary = stateAndRef.state.notary
         require(notary == this.notary) { "Input state requires notary \"${notary}\" which does not match the transaction notary \"${this.notary}\"." }
         signers.add(notary.owningKey)
@@ -153,11 +168,19 @@ open class TransactionBuilder(
 
     fun addAttachment(attachmentId: SecureHash) {
         check(currentSigs.isEmpty())
+        if (Option.CHECK_SERIALIZATION in options) {
+            // Of course this should never require checking, but for consistency
+            checkSerialization(attachmentId)
+        }
         attachments.add(attachmentId)
     }
 
+    @Throws(KryoException::class)
     fun addOutputState(state: TransactionState<*>): Int {
         check(currentSigs.isEmpty())
+        if (Option.CHECK_SERIALIZATION in options) {
+            checkSerialization(state.data)
+        }
         outputs.add(state)
         return outputs.size - 1
     }
@@ -171,8 +194,12 @@ open class TransactionBuilder(
         return addOutputState(state, notary!!)
     }
 
+    @Throws(KryoException::class)
     fun addCommand(arg: Command) {
         check(currentSigs.isEmpty())
+        if (Option.CHECK_SERIALIZATION in options) {
+            checkSerialization(arg)
+        }
         // TODO: replace pubkeys in commands with 'pointers' to keys in signers
         signers.addAll(arg.signers)
         commands.add(arg)
@@ -187,4 +214,12 @@ open class TransactionBuilder(
     fun outputStates(): List<TransactionState<*>> = ArrayList(outputs)
     fun commands(): List<Command> = ArrayList(commands)
     fun attachments(): List<SecureHash> = ArrayList(attachments)
+
+    @Throws(KryoException::class)
+    private fun <T: Any> checkSerialization(o: T) {
+        val serialized = o.serialize()
+        val deserialized = serialized.deserialize<T>()
+        val reserialized = deserialized.serialize()
+        check(serialized.hash == reserialized.hash)
+    }
 }

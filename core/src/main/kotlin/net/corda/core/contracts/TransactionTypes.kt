@@ -5,6 +5,7 @@ import net.corda.core.crypto.Party
 import net.corda.core.serialization.CordaSerializable
 import net.corda.core.transactions.LedgerTransaction
 import net.corda.core.transactions.TransactionBuilder
+import java.util.*
 
 /** Defines transaction build & validation logic for a specific transaction type */
 @CordaSerializable
@@ -65,7 +66,9 @@ sealed class TransactionType {
     /** A general transaction type where transaction validity is determined by custom contract code */
     class General : TransactionType() {
         /** Just uses the default [TransactionBuilder] with no special logic */
-        class Builder(notary: Party?) : TransactionBuilder(General(), notary) {}
+        class Builder(notary: Party?, options: EnumSet<TransactionBuilder.Option>) : TransactionBuilder(General(), notary, options = options) {
+            constructor(notary: Party?) : this(notary, EnumSet.noneOf(TransactionBuilder.Option::class.java))
+        }
 
         override fun verifyTransaction(tx: LedgerTransaction) {
             verifyNoNotaryChange(tx)
