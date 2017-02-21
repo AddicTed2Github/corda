@@ -33,6 +33,7 @@ import java.nio.file.Paths
 import java.security.KeyPair
 import java.security.PrivateKey
 import java.security.PublicKey
+import java.security.cert.CertPath
 import java.time.Clock
 import java.util.*
 import java.util.jar.JarInputStream
@@ -80,11 +81,14 @@ open class MockServices(val key: KeyPair = generateKeyPair()) : ServiceHub {
 }
 
 @ThreadSafe
-class MockIdentityService(val identities: List<Party>) : IdentityService, SingletonSerializeAsToken() {
+class MockIdentityService(val identities: List<Party>,
+                          val certificates: List<Triple<AnonymousParty, Party, CertPath>> = emptyList()) : IdentityService, SingletonSerializeAsToken() {
     private val keyToParties: Map<PublicKey, Party>
         get() = synchronized(identities) { identities.associateBy { it.owningKey } }
     private val nameToParties: Map<String, Party>
         get() = synchronized(identities) { identities.associateBy { it.name } }
+    private val anonymousToPath: Map<AnonymousParty, Pair<Party, CertPath>>
+        get() = synchronized(certificates) { certificates.map { Pair(it.first, Pair(it.second, it.third)) }.toMap() }
 
     override fun registerIdentity(party: Party) { throw UnsupportedOperationException() }
     override fun getAllIdentities(): Iterable<Party> = ArrayList(keyToParties.values)
@@ -92,6 +96,13 @@ class MockIdentityService(val identities: List<Party>) : IdentityService, Single
     override fun partyFromAnonymous(partyRef: PartyAndReference): Party? = partyFromAnonymous(partyRef.party)
     override fun partyFromKey(key: PublicKey): Party? = keyToParties[key]
     override fun partyFromName(name: String): Party? = nameToParties[name]
+
+    @Throws(IllegalStateException::class)
+    override fun assertOwnership(party: Party, anonymousParty: AnonymousParty) {
+        check(anonymousToPath[anonymousParty]?.first == party)
+    }
+    override fun pathForAnonymous(anonymousParty: AnonymousParty): CertPath? = anonymousToPath[anonymousParty]?.second
+    override fun registerPath(party: Party, anonymousParty: AnonymousParty, path: CertPath) { throw UnsupportedOperationException() }
 }
 
 
