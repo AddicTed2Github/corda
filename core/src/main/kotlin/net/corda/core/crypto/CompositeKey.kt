@@ -44,7 +44,6 @@ class CompositeKey(val threshold: Int,
     override fun getEncoded(): ByteArray = this.serialize().bytes
     override fun getFormat() = FORMAT
 
-    // TODO Can CompositeKey be fulfilled by other composite keys? With composite signature it makes some sense.
     fun isFulfilledBy(keys: Iterable<PublicKey>): Boolean {
         val totalWeight = children.mapIndexed { i, childNode ->
             if (childNode is CompositeKey) {
