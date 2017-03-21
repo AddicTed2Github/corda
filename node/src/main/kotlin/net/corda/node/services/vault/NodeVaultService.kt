@@ -14,6 +14,7 @@ import net.corda.core.node.ServiceHub
 import net.corda.core.node.services.Vault
 import net.corda.core.node.services.VaultService
 import net.corda.core.node.services.unconsumedStates
+import net.corda.core.node.services.vault.QueryCriteria
 import net.corda.core.serialization.SingletonSerializeAsToken
 import net.corda.core.serialization.deserialize
 import net.corda.core.serialization.serialize
@@ -189,6 +190,10 @@ class NodeVaultService(private val services: ServiceHub, dataSourceProperties: P
                 }
 
         return stateAndRefs.associateBy({ it.ref }, { it.state })
+    }
+
+    override fun <T : ContractState> queryBy(criteria: QueryCriteria): Iterable<StateAndRef<T>> {
+        throw UnsupportedOperationException("not implemented")
     }
 
     override fun notifyAll(txns: Iterable<WireTransaction>) {

@@ -9,8 +9,10 @@ import javax.annotation.Generated;
 public class Models {
     public static final EntityModel VAULT = new EntityModelBuilder("vault")
     .addType(VaultStatesEntity.$TYPE)
-    .addType(VaultTxnNoteEntity.$TYPE)
+    .addType(VaultPartyEntity.$TYPE)
+    .addType(VaultLinearStateEntity.$TYPE)
     .addType(VaultCashBalancesEntity.$TYPE)
+    .addType(VaultTxnNoteEntity.$TYPE)
     .build();
 
     private Models() {
