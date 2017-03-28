@@ -3,6 +3,7 @@ package net.corda.core.contracts
 import org.junit.Test
 import java.math.BigDecimal
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Tests of the [Amount] class.
@@ -18,10 +19,24 @@ class AmountTests {
     @Test
     fun decimalConversion() {
         val quantity = 1234L
-        val amount = Amount(quantity, GBP)
-        val expected = BigDecimal("12.34")
-        assertEquals(expected, amount.toDecimal())
-        assertEquals(amount, Amount.fromDecimal(amount.toDecimal(), amount.token))
+        val amountGBP = Amount(quantity, GBP)
+        val expectedGBP = BigDecimal("12.34")
+        assertEquals(expectedGBP, amountGBP.toDecimal())
+        assertEquals(amountGBP, Amount.fromDecimal(amountGBP.toDecimal(), amountGBP.token))
+        val amountJPY = Amount(quantity, JPY)
+        val expectedJPY = BigDecimal("1234")
+        assertEquals(expectedJPY, amountJPY.toDecimal())
+        assertEquals(amountJPY, Amount.fromDecimal(amountJPY.toDecimal(), amountJPY.token))
+        val testAsset = TestAsset("GB0009997999")
+        val amountBond = Amount(quantity, testAsset)
+        val expectedBond = BigDecimal("123400")
+        assertEquals(expectedBond, amountBond.toDecimal())
+        assertEquals(amountBond, Amount.fromDecimal(amountBond.toDecimal(), amountBond.token))
+    }
+
+    data class TestAsset(val name: String) : TokenizableAssetInfo {
+        override val displayTokenSize: BigDecimal = BigDecimal("100")
+        override fun toString(): String = name
     }
 
     @Test
@@ -38,5 +53,20 @@ class AmountTests {
     fun rendering() {
         assertEquals("5000 JPY", Amount.parseCurrency("¥5000").toString())
         assertEquals("50.12 USD", Amount.parseCurrency("$50.12").toString())
+    }
+
+    @Test
+    fun split() {
+        for (baseQuantity in 0..1000) {
+            val baseAmount = Amount(baseQuantity.toLong(), GBP)
+            for (partitionCount in 1..100) {
+                val splits = baseAmount.splitEvenly(partitionCount)
+                assertEquals(partitionCount, splits.size)
+                assertEquals(baseAmount, splits.sumOrZero(baseAmount.token))
+                val min = splits.min()!!
+                val max = splits.max()!!
+                assertTrue(max.quantity - min.quantity <= 1L, "Amount quantities should differ by at most one token")
+            }
+        }
     }
 }

@@ -11,16 +11,26 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize
 import com.google.common.annotations.VisibleForTesting
 import net.corda.core.serialization.CordaSerializable
 import java.math.BigDecimal
-import java.math.BigInteger
+import java.math.RoundingMode
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.*
 
 /**
+ * This interface is used by [Amount] to determine the conversion ratio from
+ * indicative/displayed asset amounts in [BigDecimal] to fungible tokens represented by Amount objects.
+ */
+interface TokenizableAssetInfo {
+    val displayTokenSize: BigDecimal
+}
+
+/**
  * Amount represents a positive quantity of some token (currency, asset, etc.), measured in quantity of the smallest
- * representable units. Note that quantity is not necessarily 1/100ths of a currency unit, but are the actual smallest
- * amount used in whatever underlying thing the amount represents.
+ * representable units. The nominal quantity represented by each individual token is equal to the [displayTokenSize].
+ * The scale property of the [displayTokenSize] should correctly reflect the displayed decimal places and is used
+ * when rounding conversions from indicative/displayed amounts in [BigDecimal] to Amount occur via the Amount.fromDecimal method.
+ * Negative amounts are not allowed as this would break conservation of the fungible tokens.
  *
  * Amounts of different tokens *do not mix* and attempting to add or subtract two amounts of different currencies
  * will throw [IllegalArgumentException]. Amounts may not be negative. Amounts are represented internally using a signed
@@ -28,25 +38,58 @@ import java.util.*
  * multiplication are overflow checked and will throw [ArithmeticException] if the operation would have caused integer
  * overflow.
  *
- * TODO: It may make sense to replace this with convenience extensions over the JSR 354 MonetaryAmount interface,
- *       in particular for use during calculations. This may also resolve...
- * TODO: Think about how positive-only vs positive-or-negative amounts can be represented in the type system.
- * TODO: Add either a scaling factor, or a variant for use in calculations.
- *
+ * @param quantity the number of tokens as a Long value.
+ * @param displayTokenSize the nominal display unit size of a single token,
+ * potentially with trailing decimal display places if the scale parameter is non-zero.
  * @param T the type of the token, for example [Currency].
+ * T should implement TokenizableAssetInfo if automatic conversion to/from a display format is required.
+ *
+ * TODO Proper lookup of currencies in a locale and context sensitive fashion is not supported and is left to the application.
  */
 @CordaSerializable
-data class Amount<T: Any>(val quantity: Long, val token: T) : Comparable<Amount<T>> {
+data class Amount<T: Any>(val quantity: Long, val displayTokenSize: BigDecimal,val token: T) : Comparable<Amount<T>> {
     companion object {
         /**
-         * Build a currency amount from a decimal representation. For example, with an input of "12.34" GBP,
-         * returns an amount with a quantity of "1234".
+         * Build an Amount from a decimal representation. For example, with an input of "12.34 GBP",
+         * returns an amount with a quantity of "1234" tokens. The displayTokenSize as determined via
+         * getDisplayTokenSize is used to determine the conversion scaling.
+         * e.g. Bonds might be in nominal amounts of 100, currencies in 0.01 penny units.
          *
          * @see Amount<Currency>.toDecimal
          */
-        fun fromDecimal(quantity: BigDecimal, currency: Currency) : Amount<Currency> {
-            val longQuantity = quantity.movePointRight(currency.defaultFractionDigits).toLong()
-            return Amount(longQuantity, currency)
+        fun <T : Any> fromDecimal(displayQuantity: BigDecimal, token: T, rounding: RoundingMode = RoundingMode.FLOOR): Amount<T> {
+            val tokenSize = getDisplayTokenSize(token)
+            val tokenCount = displayQuantity.divide(tokenSize).setScale(0, rounding).longValueExact()
+            return Amount(tokenCount, tokenSize, token)
+        }
+
+        /**
+         * For a particular token returns a zero sized Amount<T>
+         */
+        fun <T : Any> zero(token: T): Amount<T> {
+            val tokenSize = getDisplayTokenSize(token)
+            return Amount(0L, tokenSize, token)
+        }
+
+
+        /**
+         * Determines the representation of one Token quantity in BigDecimal. For Currency and Issued<Currency>
+         * the definitions is taken from Currency defaultFractionDigits property e.g. 2 for USD, or 0 for JPY
+         * so that the automatic token size is the conventional minimum penny amount.
+         * For other possible token types the asset token should implement TokenizableAssetInfo to
+         * correctly report the designed nominal amount.
+         */
+        fun getDisplayTokenSize(token: Any): BigDecimal {
+            if (token is TokenizableAssetInfo) {
+                return token.displayTokenSize
+            }
+            if (token is Currency) {
+                return BigDecimal.ONE.scaleByPowerOfTen(-token.defaultFractionDigits)
+            }
+            if (token is Issued<*>) {
+                return getDisplayTokenSize(token.product)
+            }
+            return BigDecimal.ONE
         }
 
         private val currencySymbols: Map<String, Currency> = mapOf(
@@ -111,44 +154,93 @@ data class Amount<T: Any>(val quantity: Long, val token: T) : Comparable<Amount<
     }
 
     init {
-        // Negative amounts are of course a vital part of any ledger, but negative values are only valid in certain
-        // contexts: you cannot send a negative amount of cash, but you can (sometimes) have a negative balance.
-        // If you want to express a negative amount, for now, use a long.
+        // Amount represents a static balance of physical assets as managed by the distributed ledger and is not allowed
+        // to become negative a rule further maintained by the Contract verify method.
+        // N.B. If concepts such as an account overdraft are required this should be modelled separately via Obligations,
+        // or similar second order smart contract concepts.
         require(quantity >= 0) { "Negative amounts are not allowed: $quantity" }
     }
 
     /**
-     * Construct the amount using the given decimal value as quantity. Any fractional part
-     * is discarded. To convert and use the fractional part, see [fromDecimal].
+     * Automatic conversion constructor from number of tokens to an Amount using getDisplayTokenSize to determine
+     * the displayTokenSize.
+     *
+     * @param tokenQuantity the number of tokens represented.
+     * @param token the type of the token, for example a [Currency] object.
      */
-    constructor(quantity: BigDecimal, token: T) : this(quantity.toLong(), token)
-    constructor(quantity: BigInteger, token: T) : this(quantity.toLong(), token)
+    constructor(tokenQuantity: Long, token: T) : this(tokenQuantity, getDisplayTokenSize(token), token)
 
+    /**
+     * A checked addition operator is supported to simplify aggregation of Amounts.
+     * Overflow of Amount token types will throw [ArithmeticException]
+     * Mixing non-identical token types will throw [IllegalArgumentException]
+     */
     operator fun plus(other: Amount<T>): Amount<T> {
         checkToken(other)
-        return Amount(Math.addExact(quantity, other.quantity), token)
+        return Amount(Math.addExact(quantity, other.quantity), displayTokenSize, token)
     }
 
+    /**
+     * A checked addition operator is supported to simplify netting of Amounts.
+     * If this leads to the Amount going negative this will throw a token types will throw [IllegalArgumentException].
+     * Numeric underflow will lead to this throwing [ArithmeticException]
+     * Mixing non-identical token types will throw [IllegalArgumentException]
+     */
     operator fun minus(other: Amount<T>): Amount<T> {
         checkToken(other)
-        return Amount(Math.subtractExact(quantity, other.quantity), token)
+        return Amount(Math.subtractExact(quantity, other.quantity), displayTokenSize, token)
     }
 
     private fun checkToken(other: Amount<T>) {
         require(other.token == token) { "Token mismatch: ${other.token} vs $token" }
+        require(other.displayTokenSize == displayTokenSize) { "Token size mismatch: ${other.displayTokenSize} vs $displayTokenSize" }
     }
 
-    operator fun div(other: Long): Amount<T> = Amount(quantity / other, token)
-    operator fun times(other: Long): Amount<T> = Amount(Math.multiplyExact(quantity, other), token)
-    operator fun div(other: Int): Amount<T> = Amount(quantity / other, token)
-    operator fun times(other: Int): Amount<T> = Amount(Math.multiplyExact(quantity, other.toLong()), token)
+    /**
+     * The multiplication operator is supported to allow easy calculation for multiples of a primitive Amount.
+     * Note this is not a conserving operation, so it may not always be correct modelling of proper token behaviour.
+     * N.B. Division is not supported as fractional tokens are not representable by an Amount.
+     */
+    operator fun times(other: Long): Amount<T> = Amount(Math.multiplyExact(quantity, other), displayTokenSize, token)
 
+    operator fun times(other: Int): Amount<T> = Amount(Math.multiplyExact(quantity, other.toLong()), displayTokenSize, token)
+
+    /**
+     * This method provides a token conserving divide mechanism.
+     * @param partitions the number of amounts to divide the current quantity into.
+     * @result Returns [partitions] separate Amount objects which sum to the same quantity as this Amount
+     * and differ by no more than a single token in size.
+     */
+    fun splitEvenly(partitions: Int): List<Amount<T>> {
+        require(partitions >= 1) { "Must split amount into one, or more pieces" }
+        val commonTokensPerPartition = quantity.div(partitions)
+        val residualTokens = quantity - (commonTokensPerPartition * partitions)
+        val splitAmount = Amount(commonTokensPerPartition, displayTokenSize, token)
+        val splitAmountPlusOne = Amount(commonTokensPerPartition + 1L, displayTokenSize, token)
+        return (0..partitions - 1).map { if (it < residualTokens) splitAmountPlusOne else splitAmount }.toList()
+    }
+
+    /**
+     * Convert a currency [Amount] to a decimal representation. For example, with an amount with a quantity
+     * of "1234" GBP, returns "12.34". The precise representation is controlled by the displayTokenSize,
+     * which determines the size of a single token and controls the trailing decimal places via it's scale property.
+     *
+     * @see Amount.Companion.fromDecimal
+     */
+    fun toDecimal(): BigDecimal = BigDecimal.valueOf(quantity, 0) * displayTokenSize
+
+
+    /**
+     * Convert a currency [Amount] to a display string representation.
+     *
+     * For example, with an amount with a quantity of "1234" GBP, returns "12.34 GBP".
+     * The result of fromDecimal is used to control the numerical formatting and
+     * the token specifier appended is taken from token.toString.
+     *
+     * @see Amount.Companion.fromDecimal
+     */
     override fun toString(): String {
-        val bd = if (token is Currency)
-            BigDecimal(quantity).movePointLeft(token.defaultFractionDigits)
-        else
-            BigDecimal(quantity)
-        return bd.toPlainString() + " " + token
+        return toDecimal().toPlainString() + " " + token
     }
 
     override fun compareTo(other: Amount<T>): Int {
@@ -157,17 +249,11 @@ data class Amount<T: Any>(val quantity: Long, val token: T) : Comparable<Amount<
     }
 }
 
-/**
- * Convert a currency [Amount] to a decimal representation. For example, with an amount with a quantity
- * of "1234" GBP, returns "12.34".
- *
- * @see Amount.Companion.fromDecimal
- */
-fun Amount<Currency>.toDecimal() : BigDecimal = BigDecimal(quantity).movePointLeft(token.defaultFractionDigits)
+
 
 fun <T: Any> Iterable<Amount<T>>.sumOrNull() = if (!iterator().hasNext()) null else sumOrThrow()
 fun <T: Any> Iterable<Amount<T>>.sumOrThrow() = reduce { left, right -> left + right }
-fun <T: Any> Iterable<Amount<T>>.sumOrZero(currency: T) = if (iterator().hasNext()) sumOrThrow() else Amount(0, currency)
+fun <T: Any> Iterable<Amount<T>>.sumOrZero(token: T) = if (iterator().hasNext()) sumOrThrow() else Amount.zero(token)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -546,7 +632,10 @@ enum class NetType {
 @CordaSerializable
 data class Commodity(val commodityCode: String,
                      val displayName: String,
-                     val defaultFractionDigits: Int = 0) {
+                     val defaultFractionDigits: Int = 0) : TokenizableAssetInfo {
+    override val displayTokenSize: BigDecimal
+        get() = BigDecimal.ONE.scaleByPowerOfTen(-defaultFractionDigits)
+
     companion object {
         private val registry = mapOf(
                 // Simple example commodity, as in http://www.investopedia.com/university/commodities/commodities14.asp

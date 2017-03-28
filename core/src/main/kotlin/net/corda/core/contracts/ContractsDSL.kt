@@ -4,6 +4,7 @@ package net.corda.core.contracts
 
 import net.corda.core.crypto.CompositeKey
 import net.corda.core.crypto.Party
+import java.math.BigDecimal
 import java.util.*
 
 /**
@@ -31,11 +32,11 @@ fun commodity(code: String) = Commodity.getInstance(code)!!
 @JvmField val RUB = currency("RUB")
 @JvmField val FCOJ = commodity("FCOJ")   // Frozen concentrated orange juice, yum!
 
-fun DOLLARS(amount: Int): Amount<Currency> = Amount(amount.toLong() * 100, USD)
-fun DOLLARS(amount: Double): Amount<Currency> = Amount((amount * 100).toLong(), USD)
-fun POUNDS(amount: Int): Amount<Currency> = Amount(amount.toLong() * 100, GBP)
-fun SWISS_FRANCS(amount: Int): Amount<Currency> = Amount(amount.toLong() * 100, CHF)
-fun FCOJ(amount: Int): Amount<Commodity> = Amount(amount.toLong() * 100, FCOJ)
+fun DOLLARS(amount: Int): Amount<Currency> = Amount.fromDecimal(BigDecimal.valueOf(amount.toLong()), USD)
+fun DOLLARS(amount: Double): Amount<Currency> = Amount.fromDecimal(BigDecimal.valueOf(amount), USD)
+fun POUNDS(amount: Int): Amount<Currency> = Amount.fromDecimal(BigDecimal.valueOf(amount.toLong()), GBP)
+fun SWISS_FRANCS(amount: Int): Amount<Currency> = Amount.fromDecimal(BigDecimal.valueOf(amount.toLong()), CHF)
+fun FCOJ(amount: Int): Amount<Commodity> = Amount.fromDecimal(BigDecimal.valueOf(amount.toLong()), FCOJ)
 
 val Int.DOLLARS: Amount<Currency> get() = DOLLARS(this)
 val Double.DOLLARS: Amount<Currency> get() = DOLLARS(this)
@@ -48,7 +49,7 @@ infix fun Commodity.`issued by`(deposit: PartyAndReference) = issuedBy(deposit)
 infix fun Amount<Currency>.`issued by`(deposit: PartyAndReference) = issuedBy(deposit)
 infix fun Currency.issuedBy(deposit: PartyAndReference) = Issued(deposit, this)
 infix fun Commodity.issuedBy(deposit: PartyAndReference) = Issued(deposit, this)
-infix fun Amount<Currency>.issuedBy(deposit: PartyAndReference) = Amount(quantity, token.issuedBy(deposit))
+infix fun Amount<Currency>.issuedBy(deposit: PartyAndReference) = Amount(quantity, displayTokenSize, token.issuedBy(deposit))
 
 //// Requirements /////////////////////////////////////////////////////////////////////////////////////////////////////
 

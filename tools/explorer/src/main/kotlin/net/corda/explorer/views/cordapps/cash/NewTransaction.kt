@@ -144,10 +144,10 @@ class NewTransaction : Fragment() {
             when (it) {
                 executeButton -> when (transactionTypeCB.value) {
                     CashTransaction.Issue -> {
-                        CashFlowCommand.IssueCash(Amount(amount.value, currencyChoiceBox.value), issueRef, partyBChoiceBox.value.legalIdentity, notaries.first().notaryIdentity)
+                        CashFlowCommand.IssueCash(Amount.fromDecimal(amount.value, currencyChoiceBox.value), issueRef, partyBChoiceBox.value.legalIdentity, notaries.first().notaryIdentity)
                     }
-                    CashTransaction.Pay -> CashFlowCommand.PayCash(Amount(amount.value, currencyChoiceBox.value), partyBChoiceBox.value.legalIdentity)
-                    CashTransaction.Exit -> CashFlowCommand.ExitCash(Amount(amount.value, currencyChoiceBox.value), issueRef)
+                    CashTransaction.Pay -> CashFlowCommand.PayCash(Amount.fromDecimal(amount.value, currencyChoiceBox.value), partyBChoiceBox.value.legalIdentity)
+                    CashTransaction.Exit -> CashFlowCommand.ExitCash(Amount.fromDecimal(amount.value, currencyChoiceBox.value), issueRef)
                     else -> null
                 }
                 else -> null
