@@ -61,12 +61,7 @@ class CompositeSignature : Signature(ALGORITHM) {
         return if (verifyKey != null && verifyKey!!.isFulfilledBy(sig.sigs.map { it.by })) {
             val clearData = buffer.toByteArray()
             sig.sigs.all {
-                return try {
-                    it.verifyWithECDSA(clearData)
-                    true
-                } catch(ex: IllegalStateException) {
-                    false
-                }
+                return it.verifyWithECDSAInner(clearData)
             }
         } else {
             false
