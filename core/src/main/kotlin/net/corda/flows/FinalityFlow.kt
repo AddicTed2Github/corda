@@ -93,7 +93,7 @@ class FinalityFlow(val transactions: Iterable<SignedTransaction>,
     }
     private fun hasNoNotarySignature(stx: SignedTransaction): Boolean {
         val notaryKey = stx.tx.notary?.owningKey
-        val signers = stx.sigs.map { it.by }.toSet()
+        val signers = stx.compositeSig.sigs.map { it.by }.toSet()
         return !(notaryKey?.composite?.isFulfilledBy(signers) ?: false)
     }
 
