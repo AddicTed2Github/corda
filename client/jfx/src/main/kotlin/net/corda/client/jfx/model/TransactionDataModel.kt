@@ -30,9 +30,12 @@ data class PartiallyResolvedTransaction(
         val inputs: List<ObservableValue<InputResolution>>) {
     val id = transaction.id
 
-    sealed class InputResolution(val stateRef: StateRef) {
-        class Unresolved(stateRef: StateRef) : InputResolution(stateRef)
-        class Resolved(val stateAndRef: StateAndRef<ContractState>) : InputResolution(stateAndRef.ref)
+    sealed class InputResolution {
+        abstract val stateRef: StateRef
+        data class Unresolved(override val stateRef: StateRef) : InputResolution()
+        data class Resolved(val stateAndRef: StateAndRef<ContractState>) : InputResolution() {
+            override val stateRef: StateRef get() = stateAndRef.ref
+        }
     }
 
     companion object {

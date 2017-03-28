@@ -18,10 +18,10 @@ sealed class CashFlowCommand {
     /**
      * A command to initiate the Cash flow with.
      */
-    class IssueCash(val amount: Amount<Currency>,
-                    val issueRef: OpaqueBytes,
-                    val recipient: Party,
-                    val notary: Party) : CashFlowCommand() {
+    data class IssueCash(val amount: Amount<Currency>,
+                        val issueRef: OpaqueBytes,
+                        val recipient: Party,
+                        val notary: Party) : CashFlowCommand() {
         override fun startFlow(proxy: CordaRPCOps) = proxy.startFlow(::CashIssueFlow, amount, issueRef, recipient, notary)
     }
 
