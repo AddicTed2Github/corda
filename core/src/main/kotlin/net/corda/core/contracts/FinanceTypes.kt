@@ -255,6 +255,195 @@ fun <T: Any> Iterable<Amount<T>>.sumOrNull() = if (!iterator().hasNext()) null e
 fun <T: Any> Iterable<Amount<T>>.sumOrThrow() = reduce { left, right -> left + right }
 fun <T: Any> Iterable<Amount<T>>.sumOrZero(token: T) = if (iterator().hasNext()) sumOrThrow() else Amount.zero(token)
 
+
+/**
+ * This class represents a signed transfer of tokens from one vault state to another, possibly at a future date.
+ *
+ * @param quantityDelta is a signed Long value representing the exchanged number of tokens. If positive then
+ * it represents the movement of Math.abs(quantityDelta) tokens away from source and receipt of Math.abs(quantityDelta)
+ * at the destination. If the quantityDelta is negative then the source will receive Math.abs(quantityDelta) tokens
+ * and the destination will lose Math.abs(quantityDelta) tokens.
+ * Where possible the source and destination should be coded to ensure a positive quantityDelta,
+ * but it various scenarios it may be more consistent to allow positive and negative values.
+ * For example it is common for a bank to code asset flows as gains and losses from its perspective i.e. always the destination.
+ * @param token represents the type of asset token as would be used to construct Amount<T> objects.
+ * @param source is the [Party], [Account], [CompositeKey], or other identifier of the token source if quantityDelta is positive,
+ * or the token sink if quantityDelta is negative. The type P should support value equality.
+ * @param destination is the [Party], [Account], [CompositeKey], or other identifier of the token sink if quantityDelta is positive,
+ * or the token source if quantityDelta is negative. The type P should support value equality.
+ */
+class AmountTransfer<T : Any, P : Any>(val quantityDelta: Long,
+                                       val token: T,
+                                       val source: P,
+                                       val destination: P) {
+    companion object {
+        /**
+         * Construct an AmountTransfer object from an indicative/displayable BigDecimal source, applying rounding as specified.
+         * The token size is determined from the token type and is the same as for [Amount] of the same token.
+         * @param displayQuantityDelta is the signed amount to transfer between source and destination in displayable units.
+         * Positive values mean transfers from source to destination. Negative values mean transfers from destination to source.
+         * @param token defines the asset being represented in the transfer. The token should implement TokenizableAssetInfo if custom
+         * conversion logic is required.
+         * @param source The payer of the transfer if displayQuantityDelta is positive, the payee if displayQuantityDelta is negative
+         * @param destination The payee of the transfer if displayQuantityDelta is positive, the payer if displayQuantityDelta is negative
+         * @param rounding The mode of rounding to apply after scaling to integer token units.
+         */
+        fun <T : Any, P : Any> fromDecimal(displayQuantityDelta: BigDecimal,
+                                           token: T,
+                                           source: P,
+                                           destination: P,
+                                           rounding: RoundingMode = RoundingMode.DOWN): AmountTransfer<T, P> {
+            val tokenSize = Amount.getDisplayTokenSize(token)
+            val deltaTokenCount = displayQuantityDelta.divide(tokenSize).setScale(0, rounding).longValueExact()
+            return AmountTransfer(deltaTokenCount, token, source, destination)
+        }
+
+        /**
+         * Helper to make a zero size AmountTransfer
+         */
+        fun <T : Any, P : Any> zero(token: T,
+                                    source: P,
+                                    destination: P): AmountTransfer<T, P> = AmountTransfer(0L, token, source, destination)
+    }
+
+
+    init {
+        require(source != destination) { "The source and destination cannot be the same ($source)" }
+    }
+
+    /**
+     * Add together two AmountTransfer objects to produce the single equivalent net flow.
+     * The addition only applies to AmountTransfer objects with the same token type.
+     * Also the pair of parties must be aligned, although source destination may be
+     * swapped in the second item.
+     */
+    operator fun plus(other: AmountTransfer<T, P>): AmountTransfer<T, P> {
+        require(other.token == token) { "Token mismatch: ${other.token} vs $token" }
+        require((other.source == source && other.destination == destination)
+                || (other.source == destination && other.destination == source)) {
+            "Only AmountTransfer between the same two parties can be aggregated/netted"
+        }
+        return if (other.source == source) {
+            AmountTransfer(Math.addExact(quantityDelta, other.quantityDelta), token, source, destination)
+        } else {
+            AmountTransfer(Math.subtractExact(quantityDelta, other.quantityDelta), token, source, destination)
+        }
+    }
+
+    /**
+     * Convert the quantityDelta to a displayable format BigDecimal value. The conversion ratio is the same as for
+     * [Amount] of the same token type.
+     */
+    fun toDecimal(): BigDecimal = BigDecimal.valueOf(quantityDelta, 0) * Amount.getDisplayTokenSize(token)
+
+    fun copy(quantityDelta: Long = this.quantityDelta,
+             token: T = this.token,
+             source: P = this.source,
+             destination: P = this.destination): AmountTransfer<T, P> = AmountTransfer(quantityDelta, token, source, destination)
+
+    /**
+     * Checks value equality of AmountTransfer objects, but also matches the reversed source and destination equivalent.
+     */
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other?.javaClass != javaClass) return false
+
+        other as AmountTransfer<*, *>
+
+        if (token != other.token) return false
+        if (source == other.source) {
+            if (destination != other.destination) return false
+            if (quantityDelta != other.quantityDelta) return false
+            return true
+        } else if (source == other.destination) {
+            if (destination != other.source) return false
+            if (quantityDelta != -other.quantityDelta) return false
+            return true
+        }
+
+        return false
+    }
+
+    /**
+     * HashCode ensures that reversed source and destination equivalents will hash to the same value.
+     */
+    override fun hashCode(): Int {
+        var result = Math.abs(quantityDelta).hashCode() // ignore polarity reversed values
+        result = 31 * result + token.hashCode()
+        result = 31 * result + (source.hashCode() xor destination.hashCode()) // XOR to ensure the same hash for swapped source and destination
+        return result
+    }
+
+    override fun toString(): String {
+        return "$source pays ${this.toDecimal().toPlainString()} $token to $destination"
+    }
+
+    /**
+     * Novation is a common financial operation in which a bilateral exchange is modified so that the same
+     * relative asset exchange happens, but with each party exchanging versus a central counterparty, or clearing house.
+     *
+     * @param centralParty The central party to face the exchange against.
+     * @return Returns two new AmountTransfers each between one of the original parties and the centralParty.
+     * The net total exchange is the same as in the original input.
+     */
+    fun novate(centralParty: P): Pair<AmountTransfer<T, P>, AmountTransfer<T, P>> = Pair(copy(destination = centralParty), copy(source = centralParty))
+
+    /**
+     * Wrapper class to associate ownership with a particular Amount object.
+     * @param owner the holder of the Amount
+     * @param amount the Amount of asset available in
+     * @param ref is an optional field used for housekeeping in the caller.
+     * e.g. to point back at the original Vault state objects
+     */
+    data class OwnerAndAmount<T : Any, P : Any>(val owner: P, val amount: Amount<T>, val ref: Any? = null)
+
+    /**
+     * Applies this AmountTransfer to a list of OwnerAndAmount objects representing balances.
+     * The list can be heteregeneous in terms of token types and parties, so long as there is sufficient balance
+     * of the correct token type held with the party paying for the transfer.
+     * @param balances The source list of OwnerAndAmount objects containing the funds to satisfy the exchange.
+     * @param newRef An optional marker object which is attached to any new OwnerAndAmount objects created in the output.
+     * i.e. To the new payment destination entry and to any residual change output.
+     * @return The returned list is a copy of the original list, except that funds needed to cover the exchange
+     * will have been removed and a new output and possibly residual amount entry will be added at the end of the list.
+     */
+    fun apply(balances: List<OwnerAndAmount<T, P>>, newRef: Any? = null): List<OwnerAndAmount<T, P>> {
+        val (payer, payee) = if (quantityDelta >= 0L) Pair(source, destination) else Pair(destination, source)
+        val transfer = Math.abs(quantityDelta)
+        var residual = transfer
+        val outputs = mutableListOf<OwnerAndAmount<T, P>>()
+        var remaining: OwnerAndAmount<T, P>? = null
+        var newAmount: OwnerAndAmount<T, P>? = null
+        for (balance in balances) {
+            if (balance.owner != payer
+                    || balance.amount.token != token
+                    || residual == 0L) {
+                // Just copy across unmodified.
+                outputs += balance
+            } else if (balance.amount.quantity < residual) {
+                // Consume the payers amount and do not copy across.
+                residual -= balance.amount.quantity
+            } else {
+                // Calculate any residual spend left on the payers balance.
+                if (balance.amount.quantity > residual) {
+                    remaining = OwnerAndAmount(payer, balance.amount.copy(quantity = Math.subtractExact(balance.amount.quantity, residual)), newRef)
+                }
+                // Build the new output payment to the payee.
+                newAmount = OwnerAndAmount(payee, balance.amount.copy(quantity = transfer), newRef)
+                // Clear the residual.
+                residual = 0L
+            }
+        }
+        require(residual == 0L) { "Insufficient funds. Unable to process $this" }
+        if (remaining != null) {
+            outputs += remaining
+        }
+        outputs += newAmount!!
+        return outputs
+    }
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Interest rate fixes
