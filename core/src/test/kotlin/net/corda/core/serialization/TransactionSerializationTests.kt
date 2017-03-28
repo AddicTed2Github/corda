@@ -1,7 +1,6 @@
 package net.corda.core.serialization
 
 import net.corda.core.contracts.*
-import net.corda.core.crypto.CompositeSignatureData
 import net.corda.core.crypto.SecureHash
 import net.corda.core.crypto.composite
 import net.corda.core.seconds
@@ -89,7 +88,7 @@ class TransactionSerializationTests {
 
         // Cannot construct with an empty sigs list.
         assertFailsWith(IllegalArgumentException::class) {
-            signedTX.copy(compositeSig = CompositeSignatureData.EMPTY)
+            signedTX.copy(sigs = emptyList())
         }
 
         // If the signature was replaced in transit, we don't like it.
@@ -99,7 +98,7 @@ class TransactionSerializationTests {
             tx2.signWith(DUMMY_NOTARY_KEY)
             tx2.signWith(DUMMY_KEY_2)
 
-            signedTX.copy(compositeSig = tx2.toSignedTransaction().compositeSig).verifySignatures()
+            signedTX.copy(sigs = tx2.toSignedTransaction().sigs).verifySignatures()
         }
     }
 

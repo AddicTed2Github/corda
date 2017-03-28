@@ -3,8 +3,11 @@ package net.corda.core.transactions
 import net.corda.core.contracts.AttachmentResolutionException
 import net.corda.core.contracts.NamedByHash
 import net.corda.core.contracts.TransactionResolutionException
-import net.corda.core.crypto.*
 import net.corda.core.node.ServiceHub
+import net.corda.core.crypto.DigitalSignature
+import net.corda.core.crypto.SecureHash
+import net.corda.core.crypto.composite
+import net.corda.core.crypto.signWithECDSA
 import net.corda.core.serialization.CordaSerializable
 import net.corda.core.serialization.SerializedBytes
 import java.security.KeyPair
@@ -20,22 +23,22 @@ import java.util.*
  * map to the same key (and they could be different in important ways, like validity!). The signatures on a
  * SignedTransaction might be invalid or missing: the type does not imply validity.
  * A transaction ID should be the hash of the [WireTransaction] Merkle tree root. Thus adding or removing a signature does not change it.
+ *
+ * @param sigs a list of signatures from individual (non-composite) public keys. This is passed as a list of signatures
+ * when verifying composite key signatures, but may be used as individual signatures where a single key is expected to
+ * sign.
  */
 data class SignedTransaction(val txBits: SerializedBytes<WireTransaction>,
-                             // TODO: Remove duplicate signer information between the wire transaction and signature
-                             val compositeSig: CompositeSignatureData
+                             val sigs: List<DigitalSignature.WithKey>
 ) : NamedByHash {
-    constructor(txBits: SerializedBytes<WireTransaction>,
-                sigs: List<DigitalSignature.WithKey>) : this(txBits, CompositeSignatureData(sigs))
-
     init {
-        require(compositeSig.sigs.isNotEmpty())
+        require(sigs.isNotEmpty())
     }
+
     // TODO: This needs to be reworked to ensure that the inner WireTransaction is only ever deserialised sandboxed.
 
     /** Lazily calculated access to the deserialised/hashed transaction data. */
     val tx: WireTransaction by lazy { WireTransaction.deserialize(txBits) }
-    val sigs: List<DigitalSignature.WithKey> = compositeSig.sigs
 
     /**
      * The Merkle root of the inner [WireTransaction]. Note that this is _not_ the same as the simple hash of
@@ -119,10 +122,10 @@ data class SignedTransaction(val txBits: SerializedBytes<WireTransaction>,
     }
 
     /** Returns the same transaction but with an additional (unchecked) signature. */
-    fun withAdditionalSignature(sig: DigitalSignature.WithKey) = copy(compositeSig = compositeSig.copy(sigs = compositeSig.sigs + sig))
+    fun withAdditionalSignature(sig: DigitalSignature.WithKey) = copy(sigs = sigs + sig)
 
     /** Returns the same transaction but with an additional (unchecked) signatures. */
-    fun withAdditionalSignatures(sigList: Iterable<DigitalSignature.WithKey>) = copy(compositeSig = compositeSig.copy(sigs = compositeSig.sigs + sigList))
+    fun withAdditionalSignatures(sigList: Iterable<DigitalSignature.WithKey>) = copy(sigs = sigs + sigList)
 
     /** Alias for [withAdditionalSignature] to let you use Kotlin operator overloading. */
     operator fun plus(sig: DigitalSignature.WithKey) = withAdditionalSignature(sig)
