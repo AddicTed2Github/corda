@@ -5,17 +5,21 @@ import java.io.ByteArrayOutputStream
 import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.Signature
+import java.security.SignatureException
 import java.security.spec.AlgorithmParameterSpec
 
 /**
  * Dedicated class for storing a set of signatures that comprise [CompositeKey].
  */
-class CompositeSignature : Signature(CompositeKey.ALGORITHM) {
+class CompositeSignature : Signature(ALGORITHM) {
+    companion object {
+        val ALGORITHM = "X-Corda-CompositeSig"
+    }
     private var buffer: ByteArrayOutputStream = ByteArrayOutputStream(1024)
     private var verifyKey: CompositeKey? = null
 
     override fun engineGetParameter(param: String?): Any {
-        throw UnsupportedOperationException("Composite keys do not support any parameters")
+        throw UnsupportedOperationException("Composite signatures do not support any parameters")
     }
 
     override fun engineInitSign(privateKey: PrivateKey?) {
@@ -32,11 +36,11 @@ class CompositeSignature : Signature(CompositeKey.ALGORITHM) {
     }
 
     override fun engineSetParameter(param: String?, value: Any?) {
-        throw UnsupportedOperationException("Composite keys do not support any parameters")
+        throw UnsupportedOperationException("Composite signatures do not support any parameters")
     }
 
     override fun engineSetParameter(params: AlgorithmParameterSpec) {
-        throw UnsupportedOperationException("Composite keys do not support any parameters")
+        throw UnsupportedOperationException("Composite signatures do not support any parameters")
     }
 
     override fun engineSign(): ByteArray {
@@ -51,6 +55,7 @@ class CompositeSignature : Signature(CompositeKey.ALGORITHM) {
         buffer.write(b, off, len)
     }
 
+    @Throws(SignatureException::class)
     override fun engineVerify(sigBytes: ByteArray): Boolean {
         val sig = sigBytes.deserialize<CompositeSignatureData>()
         return if (verifyKey != null && verifyKey!!.isFulfilledBy(sig.sigs.map { it.by })) {
