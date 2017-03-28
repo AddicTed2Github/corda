@@ -22,8 +22,34 @@ import java.security.*
 open class DigitalSignature(bits: ByteArray) : OpaqueBytes(bits) {
     /** A digital signature that identifies who the public key is owned by. */
     open class WithKey(val by: PublicKey, bits: ByteArray) : DigitalSignature(bits) {
+        /**
+         * Utility to simplify the act of verifying a signature.
+         *
+         * @throws InvalidKeyException if the key to verify the signature with is not valid (i.e. wrong key type for the
+         * signature).
+         * @throws SignatureException if the signature is invalid (i.e. damaged), or does not match the key (incorrect).
+         */
+        @Throws(InvalidKeyException::class, SignatureException::class)
         fun verifyWithECDSA(content: ByteArray) = by.verifyWithECDSA(content, this)
+        /**
+         * Utility to simplify the act of verifying a signature.
+         *
+         * @throws InvalidKeyException if the key to verify the signature with is not valid (i.e. wrong key type for the
+         * signature).
+         * @throws SignatureException if the signature is invalid (i.e. damaged), or does not match the key (incorrect).
+         */
+        @Throws(InvalidKeyException::class, SignatureException::class)
         fun verifyWithECDSA(content: OpaqueBytes) = by.verifyWithECDSA(content.bytes, this)
+        /**
+         * Utility to simplify the act of verifying a signature.
+         *
+         * @throws InvalidKeyException if the key to verify the signature with is not valid (i.e. wrong key type for the
+         * signature).
+         * @throws SignatureException if the signature is invalid (i.e. damaged).
+         * @return whether the signature is correct for this key.
+         */
+        @Throws(InvalidKeyException::class, SignatureException::class)
+        fun verifyWithECDSAInner(content: ByteArray) = by.verifyWithECDSAInner(content, this)
     }
 
     // TODO: consider removing this as whoever needs to identify the signer should be able to derive it from the public key
@@ -94,9 +120,32 @@ fun KeyPair.signWithECDSA(bytesToSign: ByteArray, party: Party): DigitalSignatur
     return DigitalSignature.LegallyIdentifiable(party, sig.bytes)
 }
 
-/** Utility to simplify the act of verifying a signature */
-@Throws(SignatureException::class, IllegalStateException::class)
+/**
+ * Utility to simplify the act of verifying a signature.
+ *
+ * @throws InvalidKeyException if the key to verify the signature with is not valid (i.e. wrong key type for the
+ * signature).
+ * @throws SignatureException if the signature is invalid (i.e. damaged), or does not match the key (incorrect).
+ */
+// TODO: SignatureException should be used only for a damaged signature, as per `java.security.Signature.verify()`,
+// we should use another exception (perhaps IllegalArgumentException) for indicating the signature is valid but does
+// not match.
+@Throws(IllegalStateException::class, SignatureException::class)
 fun PublicKey.verifyWithECDSA(content: ByteArray, signature: DigitalSignature) {
+    if (verifyWithECDSAInner(content, signature) == false)
+        throw SignatureException("Signature did not match")
+}
+
+/**
+ * Utility to simplify the act of verifying a signature.
+ *
+ * @throws InvalidKeyException if the key to verify the signature with is not valid (i.e. wrong key type for the
+ * signature).
+ * @throws SignatureException if the signature is invalid (i.e. damaged).
+ * @return whether the signature is correct for this key.
+ */
+@Throws(IllegalStateException::class, SignatureException::class)
+fun PublicKey.verifyWithECDSAInner(content: ByteArray, signature: DigitalSignature) : Boolean {
     val pubKey = when (this) {
         is CompositeKey -> singleKey // TODO CompositeSignature verification.
         else -> this
@@ -104,8 +153,7 @@ fun PublicKey.verifyWithECDSA(content: ByteArray, signature: DigitalSignature) {
     val verifier = EdDSAEngine()
     verifier.initVerify(pubKey)
     verifier.update(content)
-    if (verifier.verify(signature.bytes) == false)
-        throw SignatureException("Signature did not match")
+    return verifier.verify(signature.bytes)
 }
 
 /** Render a public key to a string, using a short form if it's an elliptic curve public key */
