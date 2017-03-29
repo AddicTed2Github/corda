@@ -13,6 +13,11 @@ the node. The Corda Shell is based on the popular `CRaSH project <http://www.cra
 be easily added to the node by simply dropping Groovy or Java files into the node's ``shell-commands`` directory.
 We have many enhancements planned over time including SSH access, more commands and better tab completion.
 
+We have continued work on confidential identities, introducing code to enable the Java standard libraries to work with
+composite key signatures. This will form the underlying basis of future work to standardise the public key and signature
+formats to enable interoperability with other systems, as well as enabling the use of composite signatures on X.509
+certificates to prove association between transaction keys and identity keys.
+
 Milestone 9
 -----------
 

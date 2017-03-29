@@ -14,6 +14,9 @@ API changes:
   using strings like "1000.00 USD" when writing. You can use any format supported by ``Amount.parseCurrency``
   as input.
 
+* Added ``CompositeSignature`` and ``CompositeSignatureData`` as part of enabling ``java.security`` classes to work with
+  composite keys and signatures.
+
 * Configuration:
     * Replace ``artemisPort`` with ``p2pPort`` in Gradle configuration
     * Replace ``artemisAddress`` with ``p2pAddress`` in node configuration
