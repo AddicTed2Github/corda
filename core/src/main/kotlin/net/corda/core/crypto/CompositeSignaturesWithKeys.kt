@@ -7,8 +7,8 @@ import net.corda.core.serialization.CordaSerializable
  * serialization format (i.e. not Kryo).
  */
 @CordaSerializable
-data class CompositeSignatureData(val sigs: List<DigitalSignature.WithKey>) {
+data class CompositeSignaturesWithKeys(val sigs: List<DigitalSignature.WithKey>) {
     companion object {
-        val EMPTY = CompositeSignatureData(emptyList())
+        val EMPTY = CompositeSignaturesWithKeys(emptyList())
     }
 }

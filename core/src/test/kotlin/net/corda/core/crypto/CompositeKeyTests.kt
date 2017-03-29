@@ -21,7 +21,7 @@ class CompositeKeyTests {
     val aliceSignature = aliceKey.signWithECDSA(message)
     val bobSignature = bobKey.signWithECDSA(message)
     val charlieSignature = charlieKey.signWithECDSA(message)
-    val compositeAliceSignature = CompositeSignatureData(listOf(aliceSignature))
+    val compositeAliceSignature = CompositeSignaturesWithKeys(listOf(aliceSignature))
 
     @Test
     fun `(Alice) fulfilled by Alice signature`() {
@@ -78,8 +78,8 @@ class CompositeKeyTests {
     @Test
     fun `composite signature verification`() {
         val engine = CompositeSignature()
-        val signature = CompositeSignatureData(listOf(aliceSignature))
-        val wrongSignature = CompositeSignatureData(listOf(charlieSignature))
+        val signature = CompositeSignaturesWithKeys(listOf(aliceSignature))
+        val wrongSignature = CompositeSignaturesWithKeys(listOf(charlieSignature))
         engine.initVerify(alicePublicKey)
         engine.update(message.bytes)
         assertTrue { engine.verify(signature.serialize().bytes) }

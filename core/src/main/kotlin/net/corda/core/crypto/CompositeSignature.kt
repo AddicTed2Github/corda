@@ -68,7 +68,7 @@ class CompositeSignature : Signature(ALGORITHM) {
 
     @Throws(SignatureException::class)
     override fun engineVerify(sigBytes: ByteArray): Boolean {
-        val sig = sigBytes.deserialize<CompositeSignatureData>()
+        val sig = sigBytes.deserialize<CompositeSignaturesWithKeys>()
         return if (verifyKey != null && verifyKey!!.isFulfilledBy(sig.sigs.map { it.by })) {
             val clearData = buffer.toByteArray()
             sig.sigs.all {
