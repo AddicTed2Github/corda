@@ -1,6 +1,5 @@
 package net.corda.core.crypto
 
-import com.sun.javaws.exceptions.InvalidArgumentException
 import net.corda.core.serialization.deserialize
 import java.io.ByteArrayOutputStream
 import java.security.*
@@ -13,8 +12,14 @@ class CompositeSignature : Signature(ALGORITHM) {
     companion object {
         val ALGORITHM = "X-Corda-CompositeSig"
     }
+
     private var buffer: ByteArrayOutputStream = ByteArrayOutputStream(1024)
     private var verifyKey: CompositeKey? = null
+
+    private fun assertInitialised() {
+        if (verifyKey == null)
+            throw SignatureException("Engine has not been initialised with a signing key")
+    }
 
     @Throws(InvalidAlgorithmParameterException::class)
     override fun engineGetParameter(param: String?): Any {
@@ -32,7 +37,7 @@ class CompositeSignature : Signature(ALGORITHM) {
             buffer = ByteArrayOutputStream(1024)
             verifyKey = publicKey
         } else {
-            throw IllegalArgumentException("Key to verify must be a composite key")
+            throw InvalidKeyException("Key to verify must be a composite key")
         }
     }
 
@@ -52,10 +57,12 @@ class CompositeSignature : Signature(ALGORITHM) {
     }
 
     override fun engineUpdate(b: Byte) {
+        assertInitialised()
         buffer.write(b.toInt())
     }
 
-    override fun engineUpdate(b: ByteArray?, off: Int, len: Int) {
+    override fun engineUpdate(b: ByteArray, off: Int, len: Int) {
+        assertInitialised()
         buffer.write(b, off, len)
     }
 
