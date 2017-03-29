@@ -18,6 +18,7 @@ import net.corda.client.jfx.utils.isNotNull
 import net.corda.client.jfx.utils.map
 import net.corda.client.jfx.utils.unique
 import net.corda.core.contracts.Amount
+import net.corda.core.contracts.sumOrNull
 import net.corda.core.contracts.withoutIssuer
 import net.corda.core.crypto.AbstractParty
 import net.corda.core.crypto.Party
@@ -208,8 +209,8 @@ class NewTransaction : Fragment() {
         availableAmount.textProperty()
                 .bind(Bindings.createStringBinding({
                     val filteredCash = cash.filtered { it.token.issuer.party as AbstractParty == issuer.value && it.token.product == currencyChoiceBox.value }
-                            .map { it.withoutIssuer().quantity }
-                    "${filteredCash.sum()} ${currencyChoiceBox.value?.currencyCode} Available"
+                            .map { it.withoutIssuer() }.sumOrNull()
+                    "${filteredCash ?: "None"} Available"
                 }, arrayOf(currencyChoiceBox.valueProperty(), issuerChoiceBox.valueProperty())))
         // Amount
         amountLabel.visibleProperty().bind(transactionTypeCB.valueProperty().isNotNull)
