@@ -1,4 +1,4 @@
-package net.corda.node
+package net.corda.node.shell
 
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonGenerator
@@ -14,9 +14,11 @@ import net.corda.core.flows.FlowLogic
 import net.corda.core.flows.FlowStateMachine
 import net.corda.core.messaging.CordaRPCOps
 import net.corda.core.utilities.Emoji
+import net.corda.core.utilities.loggerFor
 import net.corda.jackson.JacksonSupport
 import net.corda.jackson.StringToMethodCallParser
 import net.corda.node.internal.Node
+import net.corda.node.printBasicNodeInfo
 import net.corda.node.services.statemachine.FlowStateMachineImpl
 import net.corda.node.utilities.ANSIProgressRenderer
 import net.corda.nodeapi.ArtemisMessagingComponent
@@ -27,6 +29,7 @@ import org.crsh.console.jline.JLineProcessor
 import org.crsh.console.jline.TerminalFactory
 import org.crsh.console.jline.console.ConsoleReader
 import org.crsh.shell.ShellFactory
+import org.crsh.shell.impl.command.ExternalResolver
 import org.crsh.standalone.Bootstrap
 import org.crsh.text.Color
 import org.crsh.text.RenderPrintWriter
@@ -53,7 +56,6 @@ import kotlin.concurrent.thread
 
 // TODO: Add command history.
 // TODO: Command completion.
-// TODO: Find a way to inject this directly into CRaSH as a command, without needing JIT source compilation.
 // TODO: Do something sensible with commands that return a future.
 // TODO: Configure default renderers, send objects down the pipeline, add commands to do json/xml/yaml outputs.
 // TODO: Add a command to view last N lines/tail/control log4j2 loggers.
@@ -94,6 +96,9 @@ object InteractiveShell {
                 .build()
 
         val bootstrap = Bootstrap(Thread.currentThread().contextClassLoader, confFS, commandsFS)
+
+        ExternalResolver.INSTANCE.addCommand("run", "Runs a method from the CordaRPCOps interface on the node.", RunShellCommand::class.java)
+        ExternalResolver.INSTANCE.addCommand("flow", "Start a (work)flow on the node. This is how you can change the ledger.", FlowShellCommand::class.java)
 
         val config = Properties()
         if (runSSH) {
