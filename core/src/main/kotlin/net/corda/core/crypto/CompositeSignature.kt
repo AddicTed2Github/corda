@@ -1,11 +1,9 @@
 package net.corda.core.crypto
 
+import com.sun.javaws.exceptions.InvalidArgumentException
 import net.corda.core.serialization.deserialize
 import java.io.ByteArrayOutputStream
-import java.security.PrivateKey
-import java.security.PublicKey
-import java.security.Signature
-import java.security.SignatureException
+import java.security.*
 import java.security.spec.AlgorithmParameterSpec
 
 /**
@@ -18,14 +16,17 @@ class CompositeSignature : Signature(ALGORITHM) {
     private var buffer: ByteArrayOutputStream = ByteArrayOutputStream(1024)
     private var verifyKey: CompositeKey? = null
 
+    @Throws(InvalidAlgorithmParameterException::class)
     override fun engineGetParameter(param: String?): Any {
-        throw UnsupportedOperationException("Composite signatures do not support any parameters")
+        throw InvalidAlgorithmParameterException("Composite signatures do not support any parameters")
     }
 
+    @Throws(InvalidKeyException::class)
     override fun engineInitSign(privateKey: PrivateKey?) {
-        throw UnsupportedOperationException("Composite signatures must be assembled independently from signatures provided by the component private keys")
+        throw InvalidKeyException("Composite signatures must be assembled independently from signatures provided by the component private keys")
     }
 
+    @Throws(InvalidKeyException::class)
     override fun engineInitVerify(publicKey: PublicKey?) {
         if (publicKey is CompositeKey) {
             buffer = ByteArrayOutputStream(1024)
@@ -35,16 +36,19 @@ class CompositeSignature : Signature(ALGORITHM) {
         }
     }
 
+    @Throws(InvalidAlgorithmParameterException::class)
     override fun engineSetParameter(param: String?, value: Any?) {
-        throw UnsupportedOperationException("Composite signatures do not support any parameters")
+        throw InvalidAlgorithmParameterException("Composite signatures do not support any parameters")
     }
 
+    @Throws(InvalidAlgorithmParameterException::class)
     override fun engineSetParameter(params: AlgorithmParameterSpec) {
-        throw UnsupportedOperationException("Composite signatures do not support any parameters")
+        throw InvalidAlgorithmParameterException("Composite signatures do not support any parameters")
     }
 
+    @Throws(SignatureException::class)
     override fun engineSign(): ByteArray {
-        throw UnsupportedOperationException("Composite signatures must be assembled independently from signatures provided by the component private keys")
+        throw SignatureException("Composite signatures must be assembled independently from signatures provided by the component private keys")
     }
 
     override fun engineUpdate(b: Byte) {
